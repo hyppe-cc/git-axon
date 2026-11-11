@@ -1,0 +1,242 @@
+{
+  "name": "git-axon",
+  "displayName": "Git Axon",
+  "description": "Review ahead commits by reading the final files, with the changes painted on top.",
+  "version": "0.1.0",
+  "publisher": "local-dev",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "vscode:prepublish": "node esbuild.mjs --production",
+    "package": "vsce package --no-dependencies"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitAxon",
+          "title": "Git Axon",
+          "icon": "media/axon.svg"
+        }
+      ]
+    },
+    "views": {
+      "gitAxon": [
+        {
+          "id": "gitAxon.files",
+          "name": "Review Files"
+        },
+        {
+          "id": "gitAxon.commits",
+          "name": "Commits"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "gitAxon.files",
+        "contents": "No changes to review.\n[Refresh](command:gitAxon.refresh)\n[Choose Base Ref](command:gitAxon.chooseBase)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "gitAxon.openAllFiles",
+        "title": "Open All Review Files",
+        "category": "Git Axon",
+        "icon": "$(files)"
+      },
+      {
+        "command": "gitAxon.reviewSelectedCommits",
+        "title": "Review Selected Commits (Open Their Files)",
+        "category": "Git Axon",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "gitAxon.reviewAhead",
+        "title": "Review Ahead Commits",
+        "category": "Git Axon",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "gitAxon.openDiff",
+        "title": "Open Diff Against Baseline",
+        "category": "Git Axon",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "gitAxon.toggleOverlay",
+        "title": "Toggle Change Overlay",
+        "category": "Git Axon",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "gitAxon.chooseBase",
+        "title": "Choose Base Ref…",
+        "category": "Git Axon"
+      },
+      {
+        "command": "gitAxon.refresh",
+        "title": "Refresh",
+        "category": "Git Axon",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitAxon.openFile",
+        "title": "Open Review File",
+        "category": "Git Axon"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "gitAxon.openFile",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "gitAxon.openAllFiles",
+          "when": "view == gitAxon.files",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitAxon.reviewAhead",
+          "when": "view == gitAxon.files",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitAxon.refresh",
+          "when": "view == gitAxon.files",
+          "group": "navigation@3"
+        },
+        {
+          "command": "gitAxon.chooseBase",
+          "when": "view == gitAxon.files"
+        },
+        {
+          "command": "gitAxon.reviewSelectedCommits",
+          "when": "view == gitAxon.commits",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitAxon.reviewAhead",
+          "when": "view == gitAxon.commits",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitAxon.refresh",
+          "when": "view == gitAxon.commits",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "gitAxon.reviewSelectedCommits",
+          "when": "view == gitAxon.commits && viewItem == commit",
+          "group": "inline"
+        },
+        {
+          "command": "gitAxon.reviewSelectedCommits",
+          "when": "view == gitAxon.commits && viewItem == commit",
+          "group": "1_review"
+        },
+        {
+          "command": "gitAxon.openDiff",
+          "when": "view == gitAxon.files && viewItem == reviewFile",
+          "group": "inline"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "gitAxon.openDiff",
+          "when": "gitAxon.isReviewFile",
+          "group": "navigation@90"
+        },
+        {
+          "command": "gitAxon.toggleOverlay",
+          "when": "gitAxon.isReviewFile",
+          "group": "navigation@91"
+        }
+      ]
+    },
+    "colors": [
+      {
+        "id": "gitAxon.addedLineBackground",
+        "description": "Background of added or modified lines in a review file.",
+        "defaults": {
+          "dark": "#2ea04333",
+          "light": "#2ea04326",
+          "highContrast": "#2ea04355",
+          "highContrastLight": "#2ea04340"
+        }
+      },
+      {
+        "id": "gitAxon.removedMarker",
+        "description": "Colour of the removed-lines marker and badge in a review file.",
+        "defaults": {
+          "dark": "#f85149",
+          "light": "#cf222e",
+          "highContrast": "#ff7b72",
+          "highContrastLight": "#a40e26"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "Git Axon",
+      "properties": {
+        "gitAxon.baseRef": {
+          "type": "string",
+          "default": "",
+          "description": "Branch or ref to compare with. Empty = the current branch's upstream, then origin's default branch."
+        },
+        "gitAxon.includeUntracked": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include untracked (new, not ignored) files in the ahead review."
+        },
+        "gitAxon.historyLimit": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "description": "How many commits the Commits view lists."
+        },
+        "gitAxon.openAllConfirmThreshold": {
+          "type": "number",
+          "default": 25,
+          "minimum": 1,
+          "description": "Ask before opening more than this many files at once."
+        },
+        "gitAxon.autoOpenFiles": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open all review files automatically when the window starts."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "diff": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/vscode": "1.90.0",
+    "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
