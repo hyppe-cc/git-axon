@@ -93,6 +93,32 @@ describe('scope', () => {
     expect(commits.find((c) => c.sha === sha[0])?.ahead).toBe(false);
   });
 
+  it('uses the remote default branch and ignores the branch upstream', async () => {
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'axon-remote-')));
+    try {
+      await git(repo, ['init', '-b', 'feature']);
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'one\n');
+      await git(repo, ['add', '-A']);
+      await git(repo, [...ID, 'commit', '-q', '-m', 'c1']);
+      const head = (await git(repo, ['rev-parse', 'HEAD'])).trim();
+      await git(repo, ['config', 'remote.origin.url', '/nonexistent']);
+      await git(repo, ['config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*']);
+      await git(repo, ['update-ref', 'refs/remotes/origin/trunk', head]);
+      await git(repo, ['update-ref', 'refs/remotes/origin/feature', head]);
+      await git(repo, ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/trunk']);
+      await git(repo, ['config', 'branch.feature.remote', 'origin']);
+      await git(repo, ['config', 'branch.feature.merge', 'refs/heads/feature']);
+      // sanity: the upstream really is origin/feature
+      expect((await git(repo, ['rev-parse', '--abbrev-ref', '@{upstream}'])).trim()).toBe('origin/feature');
+      expect(await resolveBaseRef(repo, '')).toBe('origin/trunk');
+      // a session override wins; an unknown one falls back to the default branch
+      expect(await resolveBaseRef(repo, 'origin/feature')).toBe('origin/feature');
+      expect(await resolveBaseRef(repo, 'no-such-ref')).toBe('origin/trunk');
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   it('does not throw on a repository without commits', async () => {
     const scope = await buildAheadScope(emptyRoot, '', true);
     expect(scope.baseline).toBe(EMPTY_TREE);

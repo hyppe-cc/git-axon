@@ -41,14 +41,14 @@ async function isCommit(root: string, ref: string): Promise<boolean> {
   return (await tryGit(root, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])) !== undefined;
 }
 
+/**
+ * The ref the work is compared with: the override if it resolves, else the remote's default
+ * branch, else main/master. The current branch's upstream is deliberately NOT used.
+ */
 export async function resolveBaseRef(root: string, configured: string): Promise<string> {
   const cfg = configured.trim();
   if (cfg && (await isCommit(root, cfg))) {
     return cfg;
-  }
-  const upstream = (await tryGit(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']))?.trim();
-  if (upstream && (await isCommit(root, upstream))) {
-    return upstream;
   }
   const originHead = (await tryGit(root, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD']))?.trim();
   if (originHead && (await isCommit(root, originHead))) {

@@ -28,7 +28,7 @@ The status bar shows `Axon: <ahead>↑ · <n> files`; click it to focus Review F
 - **ahead** (default): baseline is the merge-base of the base ref and HEAD. Review files are everything that differs between the baseline and the working tree, including uncommitted edits and (optionally) untracked files.
 - **commits**: select commits in the Commits view and run "Review Selected Commits". The baseline is the first parent of the oldest selected commit, and the review files are the files those commits touched.
 
-The base ref is chosen in this order: `gitAxon.baseRef`, the branch upstream, `origin/HEAD`, the first of `origin/main`, `origin/master`, `main`, `master`, otherwise `HEAD`.
+The base ref is always the default branch: `origin/HEAD`, then the first of `origin/main`, `origin/master`, `main`, `master`, otherwise `HEAD`. The current branch's upstream is not used. **Choose Base Ref for This Session…** overrides it until the window is reloaded.
 
 ## Commands
 
@@ -39,14 +39,17 @@ The base ref is chosen in this order: `gitAxon.baseRef`, the branch upstream, `o
 | `gitAxon.reviewAhead` | Review Ahead Commits |
 | `gitAxon.openDiff` | Open Diff Against Baseline |
 | `gitAxon.toggleOverlay` | Toggle Change Overlay |
-| `gitAxon.chooseBase` | Choose Base Ref… |
+| `gitAxon.chooseBase` | Choose Base Ref for This Session… |
+| `gitAxon.addFileGroup` | Add File Group… |
+| `gitAxon.removeFileGroup` | Remove File Group |
+| `gitAxon.toggleFolderView` | Toggle Folder View |
 | `gitAxon.refresh` | Refresh |
 
 ## Settings
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `gitAxon.baseRef` | `""` | Branch or ref to compare with. Empty means automatic. |
+| `gitAxon.fileGroups` | Test Files rule | Groups for the Review Files view: `{ name, pattern }`, pattern is a regular expression on the file path. Unmatched files are Regular Files. |
 | `gitAxon.includeUntracked` | `true` | Include untracked, non-ignored files in the ahead review. |
 | `gitAxon.historyLimit` | `100` | How many commits the Commits view lists. |
 | `gitAxon.openAllConfirmThreshold` | `25` | Ask before opening more files than this at once. |

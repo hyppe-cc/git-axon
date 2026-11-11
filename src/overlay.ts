@@ -8,7 +8,13 @@ import { toRelPath, type ReviewScope } from './scope';
 const MAX_LINES = 20000;
 const MAX_BASE_CHARS = 2_000_000;
 
-type State = { root: string; scope: ReviewScope } | undefined;
+/** `ahead` is the fallback for files outside `scope` (e.g. opened from the Explorer). */
+type State = { root: string; scope: ReviewScope; ahead?: ReviewScope } | undefined;
+
+export interface ResolvedFile {
+  file: ReviewFile;
+  baseline: string;
+}
 
 function lineCountOfText(text: string): number {
   if (text === '') {
@@ -24,8 +30,7 @@ export class OverlayController implements vscode.Disposable {
   private readonly addedType: vscode.TextEditorDecorationType;
   private readonly removedType: vscode.TextEditorDecorationType;
   private readonly badgeType: vscode.TextEditorDecorationType;
-  private indexedScope: ReviewScope | undefined;
-  private index = new Map<string, ReviewFile>();
+  private readonly indexes = new WeakMap<ReviewScope, Map<string, ReviewFile>>();
 
   constructor(
     private readonly cache: BaseTextCache,
@@ -54,24 +59,44 @@ export class OverlayController implements vscode.Disposable {
     }
   }
 
-  reviewFileFor(doc: vscode.TextDocument): ReviewFile | undefined {
+  private indexOf(scope: ReviewScope): Map<string, ReviewFile> {
+    let index = this.indexes.get(scope);
+    if (!index) {
+      index = new Map(scope.files.map((f) => [f.path, f]));
+      this.indexes.set(scope, index);
+    }
+    return index;
+  }
+
+  /** The review file for a document and the baseline to compare it with: the current scope first, then the ahead scope. */
+  resolve(doc: vscode.TextDocument): ResolvedFile | undefined {
     const state = this.getState();
     if (!state || doc.uri.scheme !== 'file') {
       return undefined;
     }
-    if (this.indexedScope !== state.scope) {
-      this.indexedScope = state.scope;
-      this.index = new Map(state.scope.files.map((f) => [f.path, f]));
-    }
     const rel = toRelPath(state.root, doc.uri.fsPath);
-    return rel === undefined ? undefined : this.index.get(rel);
+    if (rel === undefined) {
+      return undefined;
+    }
+    for (const scope of [state.scope, state.ahead]) {
+      const file = scope ? this.indexOf(scope).get(rel) : undefined;
+      if (scope && file) {
+        return { file, baseline: scope.baseline };
+      }
+    }
+    return undefined;
+  }
+
+  reviewFileFor(doc: vscode.TextDocument): ReviewFile | undefined {
+    return this.resolve(doc)?.file;
   }
 
   async refreshEditor(editor: vscode.TextEditor): Promise<void> {
     const doc = editor.document;
     const state = this.getState();
-    const file = this.enabled && state ? this.reviewFileFor(doc) : undefined;
-    if (!state || !file || file.status === 'D') {
+    const resolved = this.enabled && state ? this.resolve(doc) : undefined;
+    const file = resolved?.file;
+    if (!state || !resolved || !file || file.status === 'D') {
       this.clear(editor);
       return;
     }
@@ -80,7 +105,7 @@ export class OverlayController implements vscode.Disposable {
       return;
     }
     const version = doc.version;
-    const baseText = await this.cache.get(state.root, state.scope.baseline, file);
+    const baseText = await this.cache.get(state.root, resolved.baseline, file);
     if (baseText.length > MAX_BASE_CHARS) {
       this.clear(editor);
       return;

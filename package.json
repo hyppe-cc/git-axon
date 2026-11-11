@@ -3,8 +3,8 @@
   "displayName": "Git Axon",
   "description": "Review ahead commits by reading the final files, with the changes painted on top.",
   "version": "0.1.0",
-  "publisher": "local-dev",
-  "private": true,
+  "publisher": "fervillanuevas",
+  "icon": "media/logo.png",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -85,7 +85,7 @@
       },
       {
         "command": "gitAxon.chooseBase",
-        "title": "Choose Base Ref…",
+        "title": "Choose Base Ref for This Session…",
         "category": "Git Axon"
       },
       {
@@ -98,12 +98,39 @@
         "command": "gitAxon.openFile",
         "title": "Open Review File",
         "category": "Git Axon"
+      },
+      {
+        "command": "gitAxon.reviewCommit",
+        "title": "Review Commit",
+        "category": "Git Axon"
+      },
+      {
+        "command": "gitAxon.addFileGroup",
+        "title": "Add File Group…",
+        "category": "Git Axon",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "gitAxon.removeFileGroup",
+        "title": "Remove File Group",
+        "category": "Git Axon",
+        "icon": "$(close)"
+      },
+      {
+        "command": "gitAxon.toggleFolderView",
+        "title": "Toggle Folder View",
+        "category": "Git Axon",
+        "icon": "$(list-tree)"
       }
     ],
     "menus": {
       "commandPalette": [
         {
           "command": "gitAxon.openFile",
+          "when": "false"
+        },
+        {
+          "command": "gitAxon.reviewCommit",
           "when": "false"
         }
       ],
@@ -141,6 +168,16 @@
           "command": "gitAxon.refresh",
           "when": "view == gitAxon.commits",
           "group": "navigation@3"
+        },
+        {
+          "command": "gitAxon.addFileGroup",
+          "when": "view == gitAxon.files",
+          "group": "navigation@4"
+        },
+        {
+          "command": "gitAxon.toggleFolderView",
+          "when": "view == gitAxon.files",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
@@ -158,6 +195,16 @@
           "command": "gitAxon.openDiff",
           "when": "view == gitAxon.files && viewItem == reviewFile",
           "group": "inline"
+        },
+        {
+          "command": "gitAxon.removeFileGroup",
+          "when": "view == gitAxon.files && viewItem == fileGroup",
+          "group": "inline"
+        },
+        {
+          "command": "gitAxon.removeFileGroup",
+          "when": "view == gitAxon.files && viewItem == fileGroup",
+          "group": "1_group"
         }
       ],
       "editor/title": [
@@ -198,11 +245,6 @@
     "configuration": {
       "title": "Git Axon",
       "properties": {
-        "gitAxon.baseRef": {
-          "type": "string",
-          "default": "",
-          "description": "Branch or ref to compare with. Empty = the current branch's upstream, then origin's default branch."
-        },
         "gitAxon.includeUntracked": {
           "type": "boolean",
           "default": true,
@@ -224,6 +266,33 @@
           "type": "boolean",
           "default": false,
           "description": "Open all review files automatically when the window starts."
+        },
+        "gitAxon.fileGroups": {
+          "type": "array",
+          "default": [
+            {
+              "name": "Test Files",
+              "pattern": "(\\.|/)(test|spec)\\.[^/]+$|(^|/)(tests?|__tests__)/"
+            }
+          ],
+          "description": "Groups for the Review Files view. A file goes to the first group whose pattern (a regular expression on the file path) matches; files matching none are listed under \"Regular Files\".",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "pattern"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Group title."
+              },
+              "pattern": {
+                "type": "string",
+                "description": "Regular expression matched against the file path."
+              }
+            }
+          }
         }
       }
     }

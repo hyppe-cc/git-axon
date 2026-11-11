@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { BASE_SCHEME, BaseContentProvider, BaseTextCache, baseUri } from './baseContent';
 import { git } from './git';
+import { compileRegex, DEFAULT_GROUP_NAME, toGroupPattern, type FileGroup, type GroupRule } from './fileGroups';
 import type { CommitInfo, ReviewFile } from './gitParse';
 import { OverlayController } from './overlay';
 import {
@@ -12,9 +13,10 @@ import {
   toRelPath,
   type ReviewScope,
 } from './scope';
-import { CommitsProvider, FilesProvider } from './views';
+import { AheadDecorations, CommitsProvider, FilesProvider } from './views';
 
 const OVERLAY_KEY = 'gitAxon.overlayEnabled';
+const FOLDER_VIEW_KEY = 'gitAxon.folderView';
 const COMMAND_IDS = [
   'gitAxon.openAllFiles',
   'gitAxon.reviewSelectedCommits',
@@ -24,6 +26,10 @@ const COMMAND_IDS = [
   'gitAxon.chooseBase',
   'gitAxon.refresh',
   'gitAxon.openFile',
+  'gitAxon.reviewCommit',
+  'gitAxon.toggleFolderView',
+  'gitAxon.addFileGroup',
+  'gitAxon.removeFileGroup',
 ];
 
 function debounce(fn: () => void, ms: number): () => void {
@@ -66,12 +72,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   let scope: ReviewScope | undefined;
+  let aheadCurrent: ReviewScope | undefined;
   let selectedShas: string[] | undefined;
+  /** Base ref chosen with "Choose Base Ref…". Lives only for this window session. */
+  let baseOverride = '';
+  const aheadDecorations = new AheadDecorations();
   const cache = new BaseTextCache();
   const filesProvider = new FilesProvider();
   const commitsProvider = new CommitsProvider();
-  const overlay = new OverlayController(cache, () => (scope ? { root, scope } : undefined));
+  const overlay = new OverlayController(cache, () => (scope ? { root, scope, ahead: aheadCurrent } : undefined));
   overlay.enabled = context.workspaceState.get<boolean>(OVERLAY_KEY, true);
+  filesProvider.setFolderView(context.workspaceState.get<boolean>(FOLDER_VIEW_KEY, false));
 
   const filesView = vscode.window.createTreeView('gitAxon.files', { treeDataProvider: filesProvider });
   const commitsView = vscode.window.createTreeView('gitAxon.commits', {
@@ -82,6 +93,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   statusBar.command = 'gitAxon.files.focus';
 
   const config = () => vscode.workspace.getConfiguration('gitAxon');
+
+  function readGroupRules(): GroupRule[] {
+    return (config().get<GroupRule[]>('fileGroups', []) ?? []).filter(
+      (r) => r && typeof r.name === 'string' && typeof r.pattern === 'string',
+    );
+  }
 
   function updateActiveContext(): void {
     const doc = vscode.window.activeTextEditor?.document;
@@ -110,11 +127,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   async function rebuildOnce(): Promise<void> {
     try {
-      const baseRefSetting = config().get<string>('baseRef', '');
       const includeUntracked = config().get<boolean>('includeUntracked', true);
       const historyLimit = config().get<number>('historyLimit', 100);
 
-      const aheadScope = await buildAheadScope(root!, baseRefSetting, includeUntracked);
+      const aheadScope = await buildAheadScope(root!, baseOverride, includeUntracked);
       const commits = await listCommits(root!, historyLimit, aheadScope.aheadShas);
 
       let next: ReviewScope = aheadScope;
@@ -127,12 +143,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           selectedShas = undefined;
         }
       }
+      commitsProvider.checked = new Set(selectedShas ?? []);
 
       if (!scope || scope.baseline !== next.baseline) {
         cache.clear();
       }
       scope = next;
-      filesProvider.setScope(root!, next);
+      aheadCurrent = aheadScope;
+      aheadDecorations.setScope(root!, aheadScope);
+      filesProvider.setScope(root!, next, readGroupRules());
       commitsProvider.setCommits(commits);
       filesView.description = next.label;
       statusBar.text = `$(git-compare) Axon: ${aheadScope.aheadShas.length}↑ · ${next.files.length} files`;
@@ -189,9 +208,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await openFileUri(fileUri(targets[0]), { preview: false });
   }
 
+  /** Puts exactly these commits under review (none = back to the ahead scope). */
+  async function setReviewCommits(shas: string[], open: boolean): Promise<void> {
+    const order = (sha: string) => commitsProvider.commits.findIndex((c) => c.sha === sha);
+    const sorted = [...new Set(shas)].sort((a, b) => order(a) - order(b));
+    selectedShas = sorted.length > 0 ? sorted : undefined;
+    commitsProvider.setChecked(new Set(sorted));
+    await rebuild();
+    if (open && selectedShas) {
+      await openAll();
+    }
+  }
+
   const provider = new BaseContentProvider(() => root);
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(BASE_SCHEME, provider),
+    vscode.window.registerFileDecorationProvider(aheadDecorations),
     filesView,
     commitsView,
     statusBar,
@@ -222,20 +254,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void vscode.window.showInformationMessage('Select one or more commits in the Commits view first.');
         return;
       }
-      const order = (c: CommitInfo) => commitsProvider.commits.findIndex((x) => x.sha === c.sha);
-      selectedShas = [...selection].sort((a, b) => order(a) - order(b)).map((c) => c.sha);
-      await rebuild();
-      await openAll();
+      await setReviewCommits(selection.map((c) => c.sha), true);
+    }),
+    vscode.commands.registerCommand('gitAxon.reviewCommit', async (commit?: CommitInfo) => {
+      if (commit) {
+        await setReviewCommits([commit.sha], true);
+      }
+    }),
+    commitsView.onDidChangeCheckboxState(async (e) => {
+      const checked = new Set(commitsProvider.checked);
+      for (const [commit, state] of e.items) {
+        if (state === vscode.TreeItemCheckboxState.Checked) {
+          checked.add(commit.sha);
+        } else {
+          checked.delete(commit.sha);
+        }
+      }
+      await setReviewCommits([...checked], true);
     }),
     vscode.commands.registerCommand('gitAxon.reviewAhead', async () => {
-      selectedShas = undefined;
-      await rebuild();
+      await setReviewCommits([], false);
     }),
     vscode.commands.registerCommand('gitAxon.openDiff', async (arg?: unknown) => {
       let file: ReviewFile | undefined;
+      let baseline = scope?.baseline;
+      const fromDoc = (doc: vscode.TextDocument | undefined): void => {
+        const resolved = doc ? overlay.resolve(doc) : undefined;
+        file = resolved?.file;
+        baseline = resolved?.baseline;
+      };
       if (arg instanceof vscode.Uri) {
-        const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === arg.toString());
-        file = doc ? overlay.reviewFileFor(doc) : undefined;
+        fromDoc(vscode.workspace.textDocuments.find((d) => d.uri.toString() === arg.toString()));
       } else if (
         arg !== null &&
         typeof arg === 'object' &&
@@ -243,22 +292,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         typeof (arg as ReviewFile).status === 'string'
       ) {
         file = arg as ReviewFile;
-      } else if (vscode.window.activeTextEditor) {
-        file = overlay.reviewFileFor(vscode.window.activeTextEditor.document);
+      } else {
+        fromDoc(vscode.window.activeTextEditor?.document);
       }
-      if (!file || !scope) {
+      if (!file || !baseline) {
         void vscode.window.showInformationMessage('Git Axon: the active file is not a review file.');
         return;
       }
       if (file.status === 'D') {
-        await vscode.window.showTextDocument(baseUri(file, scope.baseline), { preview: true });
+        await vscode.window.showTextDocument(baseUri(file, baseline), { preview: true });
         return;
       }
       await vscode.commands.executeCommand(
         'vscode.diff',
-        baseUri(file, scope.baseline),
+        baseUri(file, baseline),
         fileUri(file),
-        `${path.posix.basename(file.path)} (${scope.baseline.slice(0, 7)} ↔ working tree)`,
+        `${path.posix.basename(file.path)} (${baseline.slice(0, 7)} ↔ working tree)`,
       );
     }),
     vscode.commands.registerCommand('gitAxon.toggleOverlay', async () => {
@@ -267,7 +316,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       overlay.refreshAll();
     }),
     vscode.commands.registerCommand('gitAxon.chooseBase', async () => {
-      const AUTO = 'Automatic (upstream / default branch)';
+      const AUTO = 'Automatic (default branch)';
       let refs: string[] = [];
       try {
         const out = await git(root, ['for-each-ref', '--format=%(refname:short)', 'refs/heads', 'refs/remotes']);
@@ -276,11 +325,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void vscode.window.showErrorMessage(`Git Axon: ${err instanceof Error ? err.message : String(err)}`);
         return;
       }
-      const pick = await vscode.window.showQuickPick([AUTO, ...refs], { placeHolder: 'Choose the base ref to compare with' });
+      const pick = await vscode.window.showQuickPick([AUTO, ...refs], { placeHolder: 'Base ref for this session (resets to the default branch on reload)' });
       if (pick === undefined) {
         return;
       }
-      await config().update('baseRef', pick === AUTO ? '' : pick, vscode.ConfigurationTarget.Workspace);
+      baseOverride = pick === AUTO ? '' : pick;
+      await rebuild();
+    }),
+    vscode.commands.registerCommand('gitAxon.toggleFolderView', async () => {
+      const on = !context.workspaceState.get<boolean>(FOLDER_VIEW_KEY, false);
+      await context.workspaceState.update(FOLDER_VIEW_KEY, on);
+      filesProvider.setFolderView(on);
+    }),
+    vscode.commands.registerCommand('gitAxon.addFileGroup', async () => {
+      const name = (
+        await vscode.window.showInputBox({
+          title: 'Add File Group (1/2)',
+          prompt: 'Group name, e.g. Fixtures',
+          validateInput: (text) => (text.trim() === '' ? 'Enter a name' : undefined),
+        })
+      )?.trim();
+      if (!name) {
+        return;
+      }
+      const typed = await vscode.window.showInputBox({
+        title: `Add File Group (2/2) — ${name}`,
+        prompt: 'A folder name (e.g. __fixtures__ or packages/api) or a regular expression on the file path',
+        placeHolder: '__fixtures__',
+        validateInput: (text) =>
+          text.trim() !== '' && compileRegex(toGroupPattern(text)) ? undefined : 'Enter a folder name or a valid regular expression',
+      });
+      if (typed === undefined) {
+        return;
+      }
+      // Rules are checked in order, so a new group goes first: it wins over the broader ones.
+      const rules = [{ name, pattern: toGroupPattern(typed) }, ...readGroupRules().filter((r) => r.name !== name)];
+      await config().update('fileGroups', rules, vscode.ConfigurationTarget.Workspace);
+    }),
+    vscode.commands.registerCommand('gitAxon.removeFileGroup', async (group?: FileGroup) => {
+      const name =
+        group?.name ??
+        (await vscode.window.showQuickPick(
+          [...new Set(readGroupRules().map((r) => r.name))],
+          { placeHolder: 'Remove which file group?' },
+        ));
+      if (!name || name === DEFAULT_GROUP_NAME) {
+        return;
+      }
+      const rules = readGroupRules().filter((r) => r.name !== name);
+      await config().update('fileGroups', rules, vscode.ConfigurationTarget.Workspace);
     }),
     vscode.commands.registerCommand('gitAxon.refresh', async () => {
       cache.clear();
