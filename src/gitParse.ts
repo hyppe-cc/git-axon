@@ -75,3 +75,8 @@ export function parseLog(out: string): CommitInfo[] {
   }
   return commits;
 }
+
+/** True for a full git object id (SHA-1 or SHA-256, lowercase hex). */
+export function isSha(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(value);
+}

@@ -88,22 +88,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.commands.executeCommand('setContext', 'gitAxon.isReviewFile', !!doc && !!overlay.reviewFileFor(doc));
   }
 
-  let running = false;
+  let inFlight: Promise<void> | undefined;
   let dirty = false;
-  async function rebuild(): Promise<void> {
-    if (running) {
+  function rebuild(): Promise<void> {
+    if (inFlight) {
       dirty = true;
-      return;
+      return inFlight;
     }
-    running = true;
-    try {
-      do {
-        dirty = false;
-        await rebuildOnce();
-      } while (dirty);
-    } finally {
-      running = false;
-    }
+    inFlight = (async () => {
+      try {
+        do {
+          dirty = false;
+          await rebuildOnce();
+        } while (dirty);
+      } finally {
+        inFlight = undefined;
+      }
+    })();
+    return inFlight;
   }
 
   async function rebuildOnce(): Promise<void> {
@@ -209,7 +211,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand('gitAxon.openAllFiles', () => openAll()),
     vscode.commands.registerCommand('gitAxon.reviewSelectedCommits', async (item?: CommitInfo, items?: CommitInfo[]) => {
-      const selection = items?.length ? items : item ? [item] : [...commitsView.selection];
+      const selection = items?.length
+        ? items
+        : item
+          ? commitsView.selection.some((s) => s.sha === item.sha)
+            ? [...commitsView.selection]
+            : [item]
+          : [...commitsView.selection];
       if (selection.length === 0) {
         void vscode.window.showInformationMessage('Select one or more commits in the Commits view first.');
         return;
@@ -223,8 +231,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       selectedShas = undefined;
       await rebuild();
     }),
-    vscode.commands.registerCommand('gitAxon.openDiff', async (arg?: ReviewFile) => {
-      const file = arg ?? (vscode.window.activeTextEditor ? overlay.reviewFileFor(vscode.window.activeTextEditor.document) : undefined);
+    vscode.commands.registerCommand('gitAxon.openDiff', async (arg?: unknown) => {
+      let file: ReviewFile | undefined;
+      if (arg instanceof vscode.Uri) {
+        const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === arg.toString());
+        file = doc ? overlay.reviewFileFor(doc) : undefined;
+      } else if (
+        arg !== null &&
+        typeof arg === 'object' &&
+        typeof (arg as ReviewFile).path === 'string' &&
+        typeof (arg as ReviewFile).status === 'string'
+      ) {
+        file = arg as ReviewFile;
+      } else if (vscode.window.activeTextEditor) {
+        file = overlay.reviewFileFor(vscode.window.activeTextEditor.document);
+      }
       if (!file || !scope) {
         void vscode.window.showInformationMessage('Git Axon: the active file is not a review file.');
         return;
@@ -299,6 +320,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
     vscode.workspace.onDidChangeTextDocument((e) => refreshDocument(e.document)),
+    vscode.workspace.onDidCloseTextDocument((doc) => pending.delete(doc.uri.toString())),
     vscode.window.onDidChangeVisibleTextEditors(() => overlay.refreshAll()),
     vscode.window.onDidChangeActiveTextEditor(() => updateActiveContext()),
     vscode.workspace.onDidChangeConfiguration((e) => {

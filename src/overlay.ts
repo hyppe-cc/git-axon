@@ -105,18 +105,19 @@ export class OverlayController implements vscode.Disposable {
       };
       if (change.kind === 'added' || change.kind === 'modified') {
         const endLine = Math.min(change.startLine + change.lineCount - 1, last);
-        const range = new vscode.Range(change.startLine, 0, endLine, 0);
+        const range = new vscode.Range(change.startLine, 0, endLine, doc.lineAt(endLine).range.end.character);
         added.push(change.kind === 'modified' ? { range, hoverMessage: hover() } : { range });
       }
       if (change.kind === 'removed') {
         const anchor = Math.min(change.startLine, last);
-        removed.push({ range: new vscode.Range(anchor, 0, anchor, 0), hoverMessage: hover() });
+        removed.push({ range: doc.lineAt(anchor).range, hoverMessage: hover() });
       }
       if (change.kind === 'modified' || change.kind === 'removed') {
         const anchor = Math.min(change.startLine, last);
         const end = doc.lineAt(anchor).range.end;
         badges.push({
           range: new vscode.Range(end, end),
+          hoverMessage: hover(),
           renderOptions: {
             after: {
               contentText: '  −' + lineCountOfText(change.removedText),

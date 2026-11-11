@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNameStatusZ, parseLog, parseZList } from '../src/gitParse';
+import { parseNameStatusZ, parseLog, parseZList, isSha } from '../src/gitParse';
 
 describe('parseNameStatusZ', () => {
   it('parses modified, added and deleted together', () => {
@@ -68,5 +68,23 @@ describe('parseLog', () => {
 describe('parseZList', () => {
   it('ignores the trailing NUL and empty entries', () => {
     expect(parseZList('a.txt\0b c.txt\0')).toEqual(['a.txt', 'b c.txt']);
+  });
+});
+
+describe('isSha', () => {
+  it('accepts 40 and 64 hex characters', () => {
+    expect(isSha('a'.repeat(40))).toBe(true);
+    expect(isSha('0123456789abcdef'.repeat(4))).toBe(true);
+  });
+
+  it('rejects option-like, named and missing values', () => {
+    expect(isSha('--output=/tmp/x')).toBe(false);
+    expect(isSha('main')).toBe(false);
+    expect(isSha(undefined)).toBe(false);
+  });
+
+  it('rejects uppercase or non-hex characters', () => {
+    expect(isSha('A' + 'a'.repeat(39))).toBe(false);
+    expect(isSha('g' + 'a'.repeat(39))).toBe(false);
   });
 });

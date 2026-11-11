@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { ReviewFile } from './gitParse';
+import { isSha, type ReviewFile } from './gitParse';
 import { readBaseText } from './scope';
 
 export const BASE_SCHEME = 'git-axon';
@@ -20,8 +20,16 @@ export class BaseContentProvider implements vscode.TextDocumentContentProvider {
     if (!root) {
       return '';
     }
-    const q = JSON.parse(uri.query) as { ref: string; path: string; status: ReviewFile['status'] };
-    const file: ReviewFile = { path: q.path, status: q.status };
+    let q: { ref?: unknown; path?: unknown; status?: ReviewFile['status'] };
+    try {
+      q = JSON.parse(uri.query);
+    } catch {
+      return '';
+    }
+    if (!q || !isSha(q.ref) || typeof q.path !== 'string') {
+      return '';
+    }
+    const file: ReviewFile = { path: q.path, status: q.status ?? 'M' };
     return readBaseText(root, q.ref, file);
   }
 }
