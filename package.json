@@ -2,7 +2,7 @@
   "name": "git-axon",
   "displayName": "Git Axon",
   "description": "Review ahead commits by reading the final files, with the changes painted on top.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "fervillanuevas",
   "license": "MIT",
   "repository": {
