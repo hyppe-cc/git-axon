@@ -51,6 +51,7 @@ The base ref is always the default branch: `origin/HEAD`, then the first of `ori
 |---|---|---|
 | `gitAxon.fileGroups` | Test Files rule | Groups for the Review Files view: `{ name, pattern }`, pattern is a regular expression on the file path. Unmatched files are Regular Files. |
 | `gitAxon.includeUntracked` | `true` | Include untracked, non-ignored files in the ahead review. |
+| `gitAxon.colorizeExplorer` | `true` | Colour files changed since the base in the Explorer and on tabs: green = added, violet = modified, teal = renamed. Files with uncommitted changes keep VS Code's own Git colour. |
 | `gitAxon.historyLimit` | `100` | How many commits the Commits view lists. |
 | `gitAxon.openAllConfirmThreshold` | `25` | Ask before opening more files than this at once. |
 | `gitAxon.autoOpenFiles` | `false` | Open all review files when the window starts. |

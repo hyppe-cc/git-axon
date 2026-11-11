@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import type { CommitInfo, ReviewFile } from './gitParse';
+import type { CommitInfo, FileStatus, ReviewFile } from './gitParse';
 import { groupByFolder, groupFiles, type FileFolder, type FileGroup, type GroupRule } from './fileGroups';
 import type { ReviewScope } from './scope';
 
@@ -85,28 +85,58 @@ export class FilesProvider implements vscode.TreeDataProvider<FilesNode> {
   }
 }
 
-/** Marks files changed in the ahead commits with a badge in the Explorer and on editor tabs. */
+const STATUS_COLOR: Record<FileStatus, string> = {
+  A: 'gitAxon.addedFileForeground',
+  U: 'gitAxon.addedFileForeground',
+  M: 'gitAxon.modifiedFileForeground',
+  R: 'gitAxon.renamedFileForeground',
+  D: 'gitAxon.modifiedFileForeground',
+};
+
+const STATUS_WORD: Record<FileStatus, string> = {
+  A: 'Added',
+  U: 'New (untracked)',
+  M: 'Modified',
+  R: 'Renamed',
+  D: 'Deleted',
+};
+
+/** Colours and badges the files changed since the base, in the Explorer and on editor tabs. */
 export class AheadDecorations implements vscode.FileDecorationProvider {
   private readonly emitter = new vscode.EventEmitter<vscode.Uri[]>();
   readonly onDidChangeFileDecorations = this.emitter.event;
-  private paths = new Set<string>();
+  private statuses = new Map<string, FileStatus>();
+  private colorize = true;
 
-  setScope(root: string, scope: ReviewScope): void {
-    const next = new Set(
-      scope.files.filter((f) => f.status !== 'D').map((f) => path.join(root, f.path)),
+  setScope(root: string, scope: ReviewScope, colorize: boolean): void {
+    const next = new Map<string, FileStatus>();
+    for (const file of scope.files) {
+      if (file.status !== 'D') {
+        next.set(path.join(root, file.path), file.status);
+      }
+    }
+    const all = colorize !== this.colorize;
+    const changed = [...new Set([...this.statuses.keys(), ...next.keys()])].filter(
+      (p) => all || this.statuses.get(p) !== next.get(p),
     );
-    const changed = [...this.paths, ...next].filter((p) => this.paths.has(p) !== next.has(p));
-    this.paths = next;
+    this.statuses = next;
+    this.colorize = colorize;
     if (changed.length > 0) {
       this.emitter.fire(changed.map((p) => vscode.Uri.file(p)));
     }
   }
 
   provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
-    if (uri.scheme !== 'file' || !this.paths.has(uri.fsPath)) {
+    const status = uri.scheme === 'file' ? this.statuses.get(uri.fsPath) : undefined;
+    if (!status) {
       return undefined;
     }
-    return { badge: '↑', tooltip: 'Changed since the base (Git Axon)' };
+    return {
+      badge: '↑',
+      tooltip: `${STATUS_WORD[status]} since the base (Git Axon)`,
+      color: this.colorize ? new vscode.ThemeColor(STATUS_COLOR[status]) : undefined,
+      propagate: this.colorize,
+    };
   }
 }
 

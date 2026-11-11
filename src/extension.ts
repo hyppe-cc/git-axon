@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { BASE_SCHEME, BaseContentProvider, BaseTextCache, baseUri } from './baseContent';
@@ -45,22 +46,40 @@ function debounce(fn: () => void, ms: number): () => void {
   };
 }
 
-async function findRepo(): Promise<string | undefined> {
+interface Repo {
+  /** Real (symlink-free) repository root; used for git and for relative paths. */
+  root: string;
+  /** The same folder spelled the way the workspace opened it; used to build file URIs that match the Explorer's. */
+  displayRoot: string;
+}
+
+async function findRepo(): Promise<Repo | undefined> {
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
     if (folder.uri.scheme !== 'file') {
       continue;
     }
-    const root = await findRepoRoot(folder.uri.fsPath);
-    if (root) {
-      return root;
+    const opened = folder.uri.fsPath;
+    const root = await findRepoRoot(opened);
+    if (!root) {
+      continue;
     }
+    let real = opened;
+    try {
+      real = fs.realpathSync(opened);
+    } catch {
+      // keep the path as opened
+    }
+    // The workspace folder is the root itself or a folder inside it; strip that inner part from the opened path.
+    const inner = real.startsWith(root) ? real.slice(root.length) : undefined;
+    const displayRoot = inner !== undefined && opened.endsWith(inner) ? opened.slice(0, opened.length - inner.length) : root;
+    return { root, displayRoot: displayRoot || root };
   }
   return undefined;
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const root = await findRepo();
-  if (!root) {
+  const repo = await findRepo();
+  if (!repo) {
     for (const id of COMMAND_IDS) {
       context.subscriptions.push(
         vscode.commands.registerCommand(id, () => {
@@ -71,6 +90,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return;
   }
 
+  const { root, displayRoot } = repo;
   let scope: ReviewScope | undefined;
   let aheadCurrent: ReviewScope | undefined;
   let selectedShas: string[] | undefined;
@@ -130,15 +150,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const includeUntracked = config().get<boolean>('includeUntracked', true);
       const historyLimit = config().get<number>('historyLimit', 100);
 
-      const aheadScope = await buildAheadScope(root!, baseOverride, includeUntracked);
-      const commits = await listCommits(root!, historyLimit, aheadScope.aheadShas);
+      const aheadScope = await buildAheadScope(root, baseOverride, includeUntracked);
+      const commits = await listCommits(root, historyLimit, aheadScope.aheadShas);
 
       let next: ReviewScope = aheadScope;
       if (selectedShas) {
         const kept = commits.filter((c) => selectedShas!.includes(c.sha));
         if (kept.length > 0) {
           selectedShas = kept.map((c) => c.sha);
-          next = await buildCommitsScope(root!, kept);
+          next = await buildCommitsScope(root, kept);
         } else {
           selectedShas = undefined;
         }
@@ -150,8 +170,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       scope = next;
       aheadCurrent = aheadScope;
-      aheadDecorations.setScope(root!, aheadScope);
-      filesProvider.setScope(root!, next, readGroupRules());
+      aheadDecorations.setScope(displayRoot, aheadScope, config().get<boolean>('colorizeExplorer', true));
+      filesProvider.setScope(displayRoot, next, readGroupRules());
       commitsProvider.setCommits(commits);
       filesView.description = next.label;
       statusBar.text = `$(git-compare) Axon: ${aheadScope.aheadShas.length}↑ · ${next.files.length} files`;
@@ -174,7 +194,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   function fileUri(file: ReviewFile): vscode.Uri {
-    return vscode.Uri.file(path.join(root!, file.path));
+    return vscode.Uri.file(path.join(displayRoot, file.path));
   }
 
   async function openAll(): Promise<void> {

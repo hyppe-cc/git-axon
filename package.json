@@ -2,7 +2,7 @@
   "name": "axon-git",
   "displayName": "Axon Git",
   "description": "Review ahead commits by reading the final files, with the changes painted on top.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "fervillanuevas",
   "license": "MIT",
   "repository": {
@@ -249,6 +249,36 @@
           "highContrast": "#ff7b72",
           "highContrastLight": "#a40e26"
         }
+      },
+      {
+        "id": "gitAxon.addedFileForeground",
+        "description": "Explorer colour of files added since the base.",
+        "defaults": {
+          "dark": "#3fb950",
+          "light": "#1a7f37",
+          "highContrast": "#56d364",
+          "highContrastLight": "#116329"
+        }
+      },
+      {
+        "id": "gitAxon.modifiedFileForeground",
+        "description": "Explorer colour of files modified since the base.",
+        "defaults": {
+          "dark": "#b392f0",
+          "light": "#6f42c1",
+          "highContrast": "#d2a8ff",
+          "highContrastLight": "#512a97"
+        }
+      },
+      {
+        "id": "gitAxon.renamedFileForeground",
+        "description": "Explorer colour of files renamed since the base.",
+        "defaults": {
+          "dark": "#39c5cf",
+          "light": "#1b7c83",
+          "highContrast": "#56d4dd",
+          "highContrastLight": "#0f5f66"
+        }
       }
     ],
     "configuration": {
@@ -302,6 +332,11 @@
               }
             }
           }
+        },
+        "gitAxon.colorizeExplorer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Colour the files changed since the base in the Explorer and on editor tabs (green = added, violet = modified, teal = renamed). Files with uncommitted changes keep VS Code's own Git colour."
         }
       }
     }
