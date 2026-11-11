@@ -1,6 +1,6 @@
 {
   "name": "axon-git",
-  "displayName": "Git Axon",
+  "displayName": "Axon Git",
   "description": "Review ahead commits by reading the final files, with the changes painted on top.",
   "version": "0.1.1",
   "publisher": "fervillanuevas",
