@@ -4,6 +4,15 @@
   "description": "Review ahead commits by reading the final files, with the changes painted on top.",
   "version": "0.1.0",
   "publisher": "fervillanuevas",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hyppe-cc/git-axon.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hyppe-cc/git-axon/issues"
+  },
+  "homepage": "https://github.com/hyppe-cc/git-axon#readme",
   "icon": "media/logo.png",
   "engines": {
     "vscode": "^1.90.0"
